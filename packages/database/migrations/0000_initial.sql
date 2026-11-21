@@ -1,0 +1,18 @@
+CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS departments (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, department_id TEXT REFERENCES departments(id), role TEXT NOT NULL, model TEXT, working_directory TEXT, status TEXT NOT NULL DEFAULT 'offline', configuration TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agent_sessions (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id), project_id TEXT REFERENCES projects(id), thread_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT);
+CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), title TEXT NOT NULL, description TEXT, priority INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', assigned_agent_id TEXT REFERENCES agents(id), acceptance_criteria TEXT, result TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS tasks_project_status_idx ON tasks(project_id, status);
+CREATE TABLE IF NOT EXISTS task_dependencies (task_id TEXT NOT NULL REFERENCES tasks(id), depends_on_task_id TEXT NOT NULL REFERENCES tasks(id), PRIMARY KEY(task_id, depends_on_task_id));
+CREATE TABLE IF NOT EXISTS task_assignments (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), agent_id TEXT NOT NULL REFERENCES agents(id), assigned_at TEXT NOT NULL, unassigned_at TEXT);
+CREATE TABLE IF NOT EXISTS approval_requests (id TEXT PRIMARY KEY, session_id TEXT REFERENCES agent_sessions(id), rpc_request_id INTEGER NOT NULL, method TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', decision TEXT, created_at TEXT NOT NULL, resolved_at TEXT);
+CREATE TABLE IF NOT EXISTS agent_events (id TEXT PRIMARY KEY, thread_id TEXT, type TEXT NOT NULL, payload TEXT NOT NULL, occurred_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS agent_events_thread_time_idx ON agent_events(thread_id, occurred_at);
+CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT, detail TEXT, occurred_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS workflow_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), status TEXT NOT NULL, current_step TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS workflows (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, definition TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS workflow_steps (id TEXT PRIMARY KEY, workflow_id TEXT NOT NULL REFERENCES workflows(id), name TEXT NOT NULL, position INTEGER NOT NULL, configuration TEXT);
+CREATE TABLE IF NOT EXISTS test_reports (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), passed INTEGER NOT NULL, report TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS review_reports (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), passed INTEGER NOT NULL, report TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);

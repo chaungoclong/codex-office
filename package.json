@@ -1,0 +1,27 @@
+{
+  "name": "codex-agent-office",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.2.2",
+  "scripts": {
+    "dev": "pnpm --filter './packages/**' build && pnpm --parallel --filter @codex-office/server --filter @codex-office/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "security:preinstall": "node scripts/check-dependencies.mjs",
+    "security:audit": "pnpm audit --audit-level high",
+    "test:bootstrap": "bash -n scripts/bootstrap.sh scripts/install.sh scripts/agent-office && bash scripts/bootstrap.sh --help && node --test tests/cli/*.test.mjs",
+    "test:security": "node --test tests/security/*.test.mjs",
+    "test": "pnpm security:preinstall && pnpm test:security && pnpm test:bootstrap && pnpm --filter './packages/**' build && pnpm -r test",
+    "test:e2e": "playwright test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^22.19.1",
+    "eslint": "^9.39.1",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.10"
+  }
+}

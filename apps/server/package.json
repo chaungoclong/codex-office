@@ -1,0 +1,31 @@
+{
+  "name": "@codex-office/server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file=../../.env dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "prettier --check src",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@codex-office/codex-adapter": "workspace:*",
+    "@codex-office/database": "workspace:*",
+    "@codex-office/shared": "workspace:*",
+    "@codex-office/workflow-engine": "workspace:*",
+    "@fastify/cors": "^11.1.0",
+    "@fastify/static": "10.1.1",
+    "@fastify/websocket": "^11.2.0",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.6.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.10"
+  }
+}

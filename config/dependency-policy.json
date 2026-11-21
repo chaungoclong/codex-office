@@ -1,0 +1,11 @@
+{
+  "allowedBuildScripts": ["better-sqlite3", "esbuild"],
+  "blockedPackages": [],
+  "allowedLocalProtocols": ["workspace:"],
+  "blockedLockfilePatterns": [
+    "@tanstack/setup",
+    "github:tanstack/router#79ac49eedf774dd4b0cfa308722bc463cfe5885c",
+    "router_init.js",
+    "tanstack_runner.js"
+  ]
+}

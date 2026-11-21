@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+resolved_script="$(readlink -f -- "${BASH_SOURCE[0]}")"
+project_root="$(cd -- "$(dirname -- "$resolved_script")/.." && pwd)"
+config_root="${XDG_CONFIG_HOME:-${HOME}/.config}"
+config_dir="$config_root/agent-office"
+config_file="$config_dir/config"
+
+usage() {
+  printf '%s\n' \
+    "Usage: agent-office [project-directory] [options]" \
+    "       agent-office setup" \
+    "" \
+    "Options:" \
+    "  --password VALUE  Choose the local UI password." \
+    "  --port PORT       Serve UI and API on localhost (default: 4700)." \
+    "  --agent NAME      Agent engine (currently implemented: codex)." \
+    "  --no-open         Print the sign-in link instead of opening a browser." \
+    "  --help            Show this help." \
+    "" \
+    "Recognized future engines: claude, opencode, grok, muse, dsh, pi, cursor-agent."
+}
+
+read_config() {
+  local key="$1"
+  [[ -f "$config_file" ]] || return 0
+  sed -n "s/^${key}=//p" "$config_file" | tail -n 1
+}
+
+hash_password() {
+  node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(process.argv[1]).digest("hex"))' "$1"
+}
+
+write_config() {
+  mkdir -p "$config_dir"
+  umask 077
+  {
+    printf 'PORT=%s\n' "$port"
+    printf 'AGENT=%s\n' "$agent"
+    printf 'PROJECT=%s\n' "$project"
+    printf 'TOKEN=%s\n' "$token"
+  } > "$config_file"
+  chmod 600 "$config_file"
+}
+
+run_setup() {
+  [[ -t 0 ]] || { printf 'Setup requires an interactive terminal.\n' >&2; exit 1; }
+  local default_project default_port entered_password
+  default_project="$(read_config PROJECT)"
+  default_port="$(read_config PORT)"
+  read -r -p "First project directory [${default_project:-none}]: " project
+  project="${project:-$default_project}"
+  read -r -p "Port [${default_port:-4700}]: " port
+  port="${port:-${default_port:-4700}}"
+  read -r -p "Agent [codex]: " agent
+  agent="${agent:-codex}"
+  read -r -s -p "Local UI password (leave blank to generate one): " entered_password
+  printf '\n'
+  if [[ -n "$entered_password" ]]; then token="$(hash_password "$entered_password")"; else token="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"; fi
+  validate_options
+  write_config
+  printf 'Setup saved to %s. The office remains stopped.\n' "$config_file"
+}
+
+validate_options() {
+  [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1024 && port <= 65535 )) || { printf 'Port must be an integer from 1024 to 65535.\n' >&2; exit 2; }
+  case "$agent" in
+    codex) ;;
+    claude|opencode|grok|muse|dsh|pi|cursor-agent)
+      printf 'Agent "%s" is recognized but its adapter is not implemented. Use --agent codex.\n' "$agent" >&2
+      exit 2
+      ;;
+    *) printf 'Unknown agent: %s\n' "$agent" >&2; exit 2 ;;
+  esac
+  if [[ -n "$project" ]]; then
+    [[ -d "$project" ]] || { printf 'Project directory does not exist: %s\n' "$project" >&2; exit 2; }
+    project="$(cd -- "$project" && pwd -P)"
+  fi
+}
+
+if [[ "${1:-}" == "setup" ]]; then
+  command -v node >/dev/null 2>&1 || { printf 'Node.js is required.\n' >&2; exit 1; }
+  port="$(read_config PORT)"; port="${port:-4700}"
+  agent="$(read_config AGENT)"; agent="${agent:-codex}"
+  project="$(read_config PROJECT)"
+  token="$(read_config TOKEN)"
+  run_setup
+  exit 0
+fi
+
+port="$(read_config PORT)"; port="${port:-4700}"
+agent="$(read_config AGENT)"; agent="${agent:-codex}"
+project="$(read_config PROJECT)"
+token="$(read_config TOKEN)"
+password=""
+no_open=false
+project_arg_seen=false
+
+while (( $# )); do
+  case "$1" in
+    --password) [[ $# -ge 2 ]] || { printf '%s\n' '--password requires a value.' >&2; exit 2; }; password="$2"; shift 2 ;;
+    --port) [[ $# -ge 2 ]] || { printf '%s\n' '--port requires a value.' >&2; exit 2; }; port="$2"; shift 2 ;;
+    --agent) [[ $# -ge 2 ]] || { printf '%s\n' '--agent requires a value.' >&2; exit 2; }; agent="$2"; shift 2 ;;
+    --no-open) no_open=true; shift ;;
+    --help|-h) usage; exit 0 ;;
+    --*) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) [[ "$project_arg_seen" == false ]] || { printf 'Only one project directory may be supplied.\n' >&2; exit 2; }; project="$1"; project_arg_seen=true; shift ;;
+  esac
+done
+
+command -v node >/dev/null 2>&1 || { printf 'Node.js 22+ is required.\n' >&2; exit 1; }
+command -v curl >/dev/null 2>&1 || { printf 'curl is required.\n' >&2; exit 1; }
+command -v codex >/dev/null 2>&1 || { printf 'Codex CLI is required.\n' >&2; exit 1; }
+if [[ -n "$password" ]]; then token="$(hash_password "$password")"; fi
+if [[ -z "$token" ]]; then token="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"; fi
+validate_options
+write_config
+
+cd "$project_root"
+if [[ ! -f apps/web/dist/index.html || ! -f apps/server/dist/main.js ]]; then corepack pnpm build; fi
+
+export HOST="127.0.0.1"
+export PORT="$port"
+export WEB_ORIGIN="http://127.0.0.1:$port"
+export OFFICE_AUTH_TOKEN="$token"
+export DATABASE_URL="$config_dir/office.db"
+export SERVE_WEB="true"
+export CODEX_BIN="codex"
+
+node apps/server/dist/main.js &
+office_pid=$!
+cleanup() { kill "$office_pid" >/dev/null 2>&1 || true; wait "$office_pid" 2>/dev/null || true; }
+trap cleanup EXIT INT TERM
+
+ready=false
+for _attempt in {1..60}; do
+  if curl --silent --fail "http://127.0.0.1:$port/health" >/dev/null 2>&1; then ready=true; break; fi
+  if ! kill -0 "$office_pid" >/dev/null 2>&1; then
+    wait "$office_pid" || true
+    printf 'Agent Office server exited before becoming ready. Check the error above.\n' >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+[[ "$ready" == true ]] || { printf 'Agent Office did not start on port %s.\n' "$port" >&2; exit 1; }
+
+if [[ -n "$project" ]]; then
+  project_name="$(basename -- "$project")"
+  payload="$(node -e 'process.stdout.write(JSON.stringify({name:process.argv[1],path:process.argv[2]}))' "$project_name" "$project")"
+  curl --silent --request POST "http://127.0.0.1:$port/api/projects" \
+    --header "Authorization: Bearer $token" \
+    --header "Origin: http://127.0.0.1:$port" \
+    --header "Content-Type: application/json" \
+    --data "$payload" >/dev/null || true
+fi
+
+sign_in_link="http://127.0.0.1:$port/#token=$token"
+printf 'Agent Office is running at http://127.0.0.1:%s\n' "$port"
+if [[ "$no_open" == true ]]; then
+  printf 'Sign-in link: %s\n' "$sign_in_link"
+elif command -v xdg-open >/dev/null 2>&1; then
+  xdg-open "$sign_in_link" >/dev/null 2>&1 &
+elif command -v open >/dev/null 2>&1; then
+  open "$sign_in_link" >/dev/null 2>&1 &
+else
+  printf 'Open this sign-in link: %s\n' "$sign_in_link"
+fi
+printf 'Press Ctrl+C to stop.\n'
+wait "$office_pid"
